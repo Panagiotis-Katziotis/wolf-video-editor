@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WOLF — Video Editor</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<!-- FFmpeg WASM for real MP4/MP3 encoding -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<!-- lamejs: pure-JS MP3 encoder, no WASM needed -->
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -350,7 +350,6 @@ input[type=file]{display:none}
       <div id="export-substatus"></div>
       <div id="export-bar-wrap"><div id="export-bar"></div></div>
     </div>
-    <div id="ffmpeg-status">⚙ FFmpeg WASM loading from CDN (~30 MB, first time only)…</div>
     <div class="modal-btns">
       <button class="tbtn" id="export-cancel-btn" onclick="closeExportModal()">Cancel</button>
       <button class="tbtn primary" id="export-go-btn" onclick="startExport()">Export Now</button>
@@ -381,7 +380,7 @@ let mediaElements = {};
 let history = [];
 let historyIndex = -1;
 const MAX_HIST = 40;
-let ffmpegInstance = null; // lazy-loaded FFmpeg
+let ffmpegInstance = null; // kept for potential future use
 
 /* ═══════════════════════════════════════════════════════════
    UTILITIES
@@ -1016,11 +1015,9 @@ function switchTab(tab) {
 ═══════════════════════════════════════════════════════════ */
 function openExportModal() { document.getElementById('export-modal').classList.add('open'); updateExportUI(); }
 function closeExportModal() {
-  if (exportAborted) return; // don't close mid-export accidentally
   document.getElementById('export-modal').classList.remove('open');
   document.getElementById('export-progress').style.display = 'none';
   document.getElementById('export-go-btn').disabled = false;
-  document.getElementById('ffmpeg-status').classList.remove('visible');
   exportAborted = false;
 }
 
@@ -1103,12 +1100,45 @@ async function mixAudio(onProgress) {
   return outBuf;
 }
 
+/* ─── Draw one frame: seek video, await 'seeked', then drawImage ─── */
+function seekVideoAndDraw(el, targetTime, ectx, w, h) {
+  return new Promise(resolve => {
+    // If already at the right frame (within 1 frame tolerance), just draw
+    if (Math.abs(el.currentTime - targetTime) < 0.04) {
+      ectx.drawImage(el, 0, 0, w, h);
+      resolve();
+      return;
+    }
+    const onSeeked = () => {
+      el.removeEventListener('seeked', onSeeked);
+      ectx.drawImage(el, 0, 0, w, h);
+      resolve();
+    };
+    el.addEventListener('seeked', onSeeked);
+    el.currentTime = targetTime;
+    // Safety timeout: if seeked never fires (e.g. same frame), draw anyway
+    setTimeout(() => {
+      el.removeEventListener('seeked', onSeeked);
+      ectx.drawImage(el, 0, 0, w, h);
+      resolve();
+    }, 500);
+  });
+}
+
 /* ─── Render video frames into a canvas, produce a WebM blob ─── */
 async function recordWebM(fps, onProgress) {
-  const pv = document.getElementById('preview-video');
+  if (isPlaying) pause();
+
+  // Determine canvas size from first video clip
+  let vw = 1280, vh = 720;
+  const firstVClip = clips.find(c => c.track === 'video');
+  if (firstVClip) {
+    const el = mediaElements[firstVClip.mediaId];
+    if (el && el.videoWidth) { vw = el.videoWidth; vh = el.videoHeight; }
+  }
+
   const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = pv.videoWidth || 1280;
-  exportCanvas.height = pv.videoHeight || 720;
+  exportCanvas.width = vw; exportCanvas.height = vh;
   const ectx = exportCanvas.getContext('2d');
 
   const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
@@ -1118,85 +1148,390 @@ async function recordWebM(fps, onProgress) {
   const qualMap = { high: 8_000_000, medium: 4_000_000, low: 1_500_000 };
   const vbr = qualMap[document.getElementById('export-quality').value] || 4_000_000;
 
+  // KEY FIX: captureStream needs a nonzero fps so the encoder actually gets frames.
+  // We drive it by calling requestFrame() manually after each drawImage.
   const stream = exportCanvas.captureStream(fps);
-  // Add audio from first video element
-  const firstVideoClip = clips.find(c => c.track === 'video');
-  if (firstVideoClip) {
-    const el = mediaElements[firstVideoClip.mediaId];
-    if (el && el.captureStream) {
-      el.captureStream().getAudioTracks().forEach(t => stream.addTrack(t));
-    }
-  }
-
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: vbr });
   const chunks = [];
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-  recorder.start(100);
+
+  // Start with timeslice so we get periodic ondataavailable events
+  recorder.start(500);
 
   const frameTime = 1 / fps;
-  let t = 0;
   const totalFrames = Math.ceil(totalDuration * fps);
-  let frame = 0;
 
-  await new Promise(resolve => {
-    function renderFrame() {
-      if (t > totalDuration) { resolve(); return; }
-      const clip = getClipAt(t);
-      if (clip) {
-        const el = mediaElements[clip.mediaId];
-        if (el && el.tagName === 'VIDEO') {
-          el.currentTime = clip.trimStart + (t - clip.startTime) * clip.speed;
-          ectx.drawImage(el, 0, 0, exportCanvas.width, exportCanvas.height);
-        } else {
-          ectx.fillStyle = '#000'; ectx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-        }
-      } else {
-        ectx.fillStyle = '#000'; ectx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-      }
-      const sub = subtitles.find(s => t >= s.start && t < s.end);
-      if (sub) {
-        ectx.font = 'bold 32px DM Sans, sans-serif';
-        ectx.textAlign = 'center';
-        ectx.fillStyle = 'rgba(0,0,0,.6)';
-        ectx.fillRect(0, exportCanvas.height - 70, exportCanvas.width, 60);
-        ectx.fillStyle = '#fff';
-        ectx.fillText(sub.text, exportCanvas.width / 2, exportCanvas.height - 30);
-      }
-      t += frameTime; frame++;
-      onProgress(frame / totalFrames, `Frame ${frame} / ${totalFrames}`);
-      setTimeout(renderFrame, 0);
+  // Draw a black first frame immediately so the recorder has something to start with
+  ectx.fillStyle = '#000';
+  ectx.fillRect(0, 0, vw, vh);
+  stream.getVideoTracks()[0].requestFrame?.();
+
+  for (let frame = 0; frame < totalFrames; frame++) {
+    if (exportAborted) break;
+    const t = frame * frameTime;
+    const clip = getClipAt(t);
+
+    if (clip && mediaElements[clip.mediaId] && mediaElements[clip.mediaId].tagName === 'VIDEO') {
+      const el = mediaElements[clip.mediaId];
+      const mediaTime = clip.trimStart + (t - clip.startTime) * clip.speed;
+      await seekVideoAndDraw(el, mediaTime, ectx, vw, vh);
+    } else {
+      ectx.fillStyle = '#000';
+      ectx.fillRect(0, 0, vw, vh);
     }
-    renderFrame();
-  });
 
+    // Overlay subtitles
+    const sub = subtitles.find(s => t >= s.start && t < s.end);
+    if (sub) {
+      const fontSize = Math.max(20, Math.round(vh * 0.042));
+      ectx.font = `bold ${fontSize}px DM Sans, sans-serif`;
+      ectx.textAlign = 'center';
+      const tw = ectx.measureText(sub.text).width;
+      ectx.fillStyle = 'rgba(0,0,0,0.65)';
+      ectx.fillRect(vw / 2 - tw / 2 - 16, vh - fontSize * 2.2, tw + 32, fontSize * 1.6);
+      ectx.fillStyle = '#fff';
+      ectx.fillText(sub.text, vw / 2, vh - fontSize * 0.85);
+    }
+
+    // Tell the captureStream a new frame is ready
+    stream.getVideoTracks()[0].requestFrame?.();
+
+    onProgress((frame + 1) / totalFrames, `Frame ${frame + 1} / ${totalFrames}`);
+
+    // Yield to browser so MediaRecorder can process chunks
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  // Flush remaining data and stop
+  recorder.requestData();
+  await new Promise(r => setTimeout(r, 100));
   recorder.stop();
   await new Promise(r => { recorder.onstop = r; });
+
+  if (chunks.length === 0) throw new Error('No frames were captured. Make sure you have video clips on the timeline.');
   return new Blob(chunks, { type: 'video/webm' });
 }
 
-/* ─── Load FFmpeg WASM lazily ─── */
-async function loadFFmpeg() {
-  if (ffmpegInstance) return ffmpegInstance;
+/* ─── MP3 export via lamejs (pure JS, no WASM) ─── */
+async function exportMP3() {
+  // lamejs exposes itself as window.lamejs or a global Mp3Encoder
+  const lame = window.lamejs;
+  if (!lame || !lame.Mp3Encoder) throw new Error('lamejs failed to load. Check your internet connection and reload the page.');
 
-  document.getElementById('ffmpeg-status').classList.add('visible');
-  setExportStatus('Loading FFmpeg WASM…', 'First time ~30 MB download');
+  setExportStatus('Decoding audio tracks…'); setExportBar(5);
+  const audioBuf = await mixAudio(p => setExportBar(5 + p * 45));
+  setExportStatus('Encoding MP3…', 'Using lamejs'); setExportBar(55);
 
-  // Use @ffmpeg/ffmpeg v0.12 ESM from CDN
-  const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
-  const { fetchFile, toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
+  const qualMap = { high: 320, medium: 192, low: 128 };
+  const kbps = qualMap[document.getElementById('export-quality').value] || 192;
 
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-  const ffmpeg = new FFmpeg();
-  ffmpeg.on('progress', ({ progress }) => {
-    setExportBar(80 + progress * 18); // 80–98% during transcode
+  const sr = audioBuf.sampleRate;
+  const left = audioBuf.getChannelData(0);
+  const right = audioBuf.numberOfChannels > 1 ? audioBuf.getChannelData(1) : left;
+
+  function floatToInt16(floatArr) {
+    const int16 = new Int16Array(floatArr.length);
+    for (let i = 0; i < floatArr.length; i++) {
+      const s = Math.max(-1, Math.min(1, floatArr[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return int16;
+  }
+
+  const mp3enc = new lame.Mp3Encoder(2, sr, kbps);
+  const mp3Data = [];
+  const CHUNK = 1152;
+  const leftInt = floatToInt16(left);
+  const rightInt = floatToInt16(right);
+  const total = leftInt.length;
+
+  // Process in batches with yields so the browser stays responsive
+  for (let i = 0; i < total; i += CHUNK) {
+    const lChunk = leftInt.subarray(i, i + CHUNK);
+    const rChunk = rightInt.subarray(i, i + CHUNK);
+    const encoded = mp3enc.encodeBuffer(lChunk, rChunk);
+    if (encoded.length > 0) mp3Data.push(new Int8Array(encoded));
+    // yield every ~100 chunks to keep UI alive
+    if ((i / CHUNK) % 100 === 0) {
+      setExportBar(55 + 40 * (i / total));
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  const final = mp3enc.flush();
+  if (final.length > 0) mp3Data.push(new Int8Array(final));
+
+  const blob = new Blob(mp3Data, { type: 'audio/mpeg' });
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.mp3');
+}
+
+/* ─── MP4 export: WebM video + separate audio mixed in via AudioContext ─── */
+/* Browser can't natively mux to H.264 MP4 without WASM. Best in-browser     */
+/* approach: produce a WebM with proper audio via MediaRecorder + AudioContext */
+/* then offer it as .mp4 — all major players (VLC, QuickTime, Chrome) open it */
+/* OR use the WebCodecs API (Chrome 94+) for a true MP4 with AAC audio.       */
+async function exportMP4(fps) {
+  // Try WebCodecs path first (Chrome 94+), fallback to annotated WebM
+  if (typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined') {
+    await exportMP4WebCodecs(fps);
+  } else {
+    // Fallback: produce WebM with mixed audio track, save as .mp4
+    // VLC/most players handle this fine; Safari needs actual H.264
+    setExportStatus('Recording video + audio…'); setExportBar(3);
+    const blob = await recordWebMWithAudio(fps, (p, sub) => {
+      setExportBar(3 + p * 94);
+      setExportStatus('Recording frames…', sub);
+    });
+    setExportBar(100); setExportStatus('Done! Downloading…');
+    downloadBlob(blob, 'wolf-export.mp4');
+  }
+}
+
+/* ─── WebM with mixed audio (for the MP4 fallback and plain WebM export) ─── */
+async function recordWebMWithAudio(fps, onProgress) {
+  if (isPlaying) pause();
+
+  let vw = 1280, vh = 720;
+  const firstVClip = clips.find(c => c.track === 'video');
+  if (firstVClip) {
+    const el = mediaElements[firstVClip.mediaId];
+    if (el && el.videoWidth) { vw = el.videoWidth; vh = el.videoHeight; }
+  }
+
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = vw; exportCanvas.height = vh;
+  const ectx = exportCanvas.getContext('2d');
+
+  const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m));
+  if (!mimeType) throw new Error('MediaRecorder not supported. Use Chrome or Edge.');
+
+  const qualMap = { high: 8_000_000, medium: 4_000_000, low: 1_500_000 };
+  const vbr = qualMap[document.getElementById('export-quality').value] || 4_000_000;
+
+  // Build an AudioContext graph so MediaRecorder can capture audio
+  const audioCtx = new AudioContext();
+  const dest = audioCtx.createMediaStreamDestination();
+
+  // For each clip, create a buffer source and connect it to the destination
+  const audioSources = [];
+  for (const clip of clips) {
+    const mf = mediaFiles.find(m => m.id === clip.mediaId);
+    if (!mf) continue;
+    try {
+      const resp = await fetch(mf.url);
+      const ab = await resp.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(ab);
+      audioSources.push({ clip, decoded });
+    } catch (e) { /* skip non-audio */ }
+  }
+
+  // KEY: captureStream needs nonzero fps so encoder gets frames
+  const canvasStream = exportCanvas.captureStream(fps);
+  const videoTrack = canvasStream.getVideoTracks()[0];
+  const combinedStream = new MediaStream([videoTrack, ...dest.stream.getAudioTracks()]);
+
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: vbr });
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  // timeslice=500ms ensures ondataavailable fires regularly (critical for non-empty output)
+  recorder.start(500);
+
+  const frameTime = 1 / fps;
+  const totalFrames = Math.ceil(totalDuration * fps);
+
+  // Draw a black seed frame before scheduling audio, so recorder has a valid first frame
+  ectx.fillStyle = '#000'; ectx.fillRect(0, 0, vw, vh);
+  videoTrack.requestFrame?.();
+  await new Promise(r => setTimeout(r, 20)); // let MediaRecorder initialise
+
+  // Schedule audio sources ahead of time
+  const startWall = audioCtx.currentTime + 0.05;
+  for (const { clip, decoded } of audioSources) {
+    const src = audioCtx.createBufferSource();
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = clip.volume || 1;
+    src.buffer = decoded;
+    src.playbackRate.value = clip.speed || 1;
+    src.connect(gainNode).connect(dest);
+    src.start(startWall + clip.startTime, clip.trimStart, clip.trimEnd - clip.trimStart);
+  }
+
+  // Render frames
+  for (let frame = 0; frame < totalFrames; frame++) {
+    if (exportAborted) break;
+    const t = frame * frameTime;
+    const clip = getClipAt(t);
+
+    if (clip && mediaElements[clip.mediaId] && mediaElements[clip.mediaId].tagName === 'VIDEO') {
+      const el = mediaElements[clip.mediaId];
+      const mediaTime = clip.trimStart + (t - clip.startTime) * clip.speed;
+      await seekVideoAndDraw(el, mediaTime, ectx, vw, vh);
+    } else {
+      ectx.fillStyle = '#000'; ectx.fillRect(0, 0, vw, vh);
+    }
+
+    const sub = subtitles.find(s => t >= s.start && t < s.end);
+    if (sub) {
+      const fontSize = Math.max(20, Math.round(vh * 0.042));
+      ectx.font = `bold ${fontSize}px DM Sans, sans-serif`;
+      ectx.textAlign = 'center';
+      const tw = ectx.measureText(sub.text).width;
+      ectx.fillStyle = 'rgba(0,0,0,0.65)';
+      ectx.fillRect(vw / 2 - tw / 2 - 16, vh - fontSize * 2.2, tw + 32, fontSize * 1.6);
+      ectx.fillStyle = '#fff';
+      ectx.fillText(sub.text, vw / 2, vh - fontSize * 0.85);
+    }
+
+    // Tell captureStream a new frame is ready, then yield so it can be encoded
+    videoTrack.requestFrame?.();
+    await new Promise(r => setTimeout(r, 0));
+
+    onProgress((frame + 1) / totalFrames, `Frame ${frame + 1} / ${totalFrames}`);
+  }
+
+  // Flush and stop
+  recorder.requestData();
+  await new Promise(r => setTimeout(r, 150));
+  recorder.stop();
+  await new Promise(r => { recorder.onstop = r; });
+  audioCtx.close();
+
+  if (chunks.length === 0) throw new Error('No frames were captured. Make sure you have video clips on the timeline.');
+  return new Blob(chunks, { type: 'video/webm' });
+}
+
+/* ─── True MP4 via WebCodecs API (Chrome 94+) ─── */
+async function exportMP4WebCodecs(fps) {
+  // We'll use mp4-muxer loaded from CDN
+  setExportStatus('Loading MP4 muxer…'); setExportBar(3);
+  let Muxer, ArrayBufferTarget;
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@4.5.3/build/mp4-muxer.mjs');
+    Muxer = mod.Muxer; ArrayBufferTarget = mod.ArrayBufferTarget;
+  } catch(e) {
+    // CDN failed — fall back to WebM-as-MP4
+    setExportStatus('MP4 muxer unavailable, using WebM fallback…'); setExportBar(5);
+    const blob = await recordWebMWithAudio(fps, (p, sub) => {
+      setExportBar(5 + p * 92); setExportStatus('Recording frames…', sub);
+    });
+    setExportBar(100); setExportStatus('Done! Downloading…');
+    downloadBlob(blob, 'wolf-export.mp4'); return;
+  }
+
+  if (isPlaying) pause();
+  let vw = 1280, vh = 720;
+  const firstVClip = clips.find(c => c.track === 'video');
+  if (firstVClip) {
+    const el = mediaElements[firstVClip.mediaId];
+    if (el && el.videoWidth) { vw = el.videoWidth; vh = el.videoHeight; }
+  }
+  // Round to even for H.264
+  vw = vw % 2 === 0 ? vw : vw - 1;
+  vh = vh % 2 === 0 ? vh : vh - 1;
+
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({ target, video: { codec: 'avc', width: vw, height: vh }, audio: { codec: 'aac', sampleRate: 48000, numberOfChannels: 2 }, fastStart: 'in-memory' });
+
+  const qualMap = { high: 8_000_000, medium: 4_000_000, low: 1_500_000 };
+  const vbr = qualMap[document.getElementById('export-quality').value] || 4_000_000;
+
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: e => console.error('VideoEncoder error', e)
   });
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  videoEncoder.configure({ codec: 'avc1.42001f', width: vw, height: vh, bitrate: vbr, framerate: fps });
+
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: e => console.error('AudioEncoder error', e)
   });
-  ffmpegInstance = { ffmpeg, fetchFile };
-  document.getElementById('ffmpeg-status').classList.remove('visible');
-  return ffmpegInstance;
+  audioEncoder.configure({ codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, bitrate: 192000 });
+
+  // Mix audio
+  setExportStatus('Decoding audio…'); setExportBar(5);
+  const audioCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 48000), 48000);
+  for (const clip of clips) {
+    const mf = mediaFiles.find(m => m.id === clip.mediaId);
+    if (!mf) continue;
+    try {
+      const resp = await fetch(mf.url);
+      const ab = await resp.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(ab.slice(0));
+      const src = audioCtx.createBufferSource();
+      const gain = audioCtx.createGain();
+      gain.gain.value = clip.volume || 1;
+      src.buffer = decoded;
+      src.playbackRate.value = clip.speed || 1;
+      src.connect(gain).connect(audioCtx.destination);
+      src.start(clip.startTime, clip.trimStart, clip.trimEnd - clip.trimStart);
+    } catch(e) { /* skip */ }
+  }
+  const renderedAudio = await audioCtx.startRendering();
+  setExportBar(15);
+
+  // Encode audio in chunks
+  const AUDIO_CHUNK = 4096;
+  const totalSamples = renderedAudio.length;
+  const left = renderedAudio.getChannelData(0);
+  const right = renderedAudio.numberOfChannels > 1 ? renderedAudio.getChannelData(1) : left;
+  for (let i = 0; i < totalSamples; i += AUDIO_CHUNK) {
+    const len = Math.min(AUDIO_CHUNK, totalSamples - i);
+    const interleaved = new Float32Array(len * 2);
+    for (let j = 0; j < len; j++) { interleaved[j*2] = left[i+j]; interleaved[j*2+1] = right[i+j]; }
+    const frame = new AudioData({ format: 'f32', sampleRate: 48000, numberOfFrames: len, numberOfChannels: 2, timestamp: Math.round(i / 48000 * 1e6), data: interleaved });
+    audioEncoder.encode(frame); frame.close();
+  }
+  await audioEncoder.flush();
+  setExportBar(25);
+
+  // Encode video frames
+  const offCanvas = new OffscreenCanvas(vw, vh);
+  const ectx = offCanvas.getContext('2d');
+  const frameTime = 1 / fps;
+  const totalFrames = Math.ceil(totalDuration * fps);
+
+  setExportStatus('Encoding video frames…');
+  for (let frame = 0; frame < totalFrames; frame++) {
+    if (exportAborted) break;
+    const t = frame * frameTime;
+    const clip = getClipAt(t);
+    const timeus = Math.round(t * 1e6);
+
+    if (clip && mediaElements[clip.mediaId] && mediaElements[clip.mediaId].tagName === 'VIDEO') {
+      const el = mediaElements[clip.mediaId];
+      const mediaTime = clip.trimStart + (t - clip.startTime) * clip.speed;
+      await seekVideoAndDraw(el, mediaTime, ectx, vw, vh);
+    } else {
+      ectx.fillStyle = '#000'; ectx.fillRect(0, 0, vw, vh);
+    }
+
+    const sub = subtitles.find(s => t >= s.start && t < s.end);
+    if (sub) {
+      const fontSize = Math.max(20, Math.round(vh * 0.042));
+      ectx.font = `bold ${fontSize}px sans-serif`;
+      ectx.textAlign = 'center';
+      const tw = ectx.measureText(sub.text).width;
+      ectx.fillStyle = 'rgba(0,0,0,0.65)';
+      ectx.fillRect(vw/2 - tw/2 - 16, vh - fontSize*2.2, tw + 32, fontSize*1.6);
+      ectx.fillStyle = '#fff';
+      ectx.fillText(sub.text, vw / 2, vh - fontSize * 0.85);
+    }
+
+    const vframe = new VideoFrame(offCanvas, { timestamp: timeus, duration: Math.round(frameTime * 1e6) });
+    videoEncoder.encode(vframe, { keyFrame: frame % 30 === 0 });
+    vframe.close();
+
+    setExportBar(25 + 73 * (frame + 1) / totalFrames);
+    setExportStatus('Encoding video…', `Frame ${frame + 1} / ${totalFrames}`);
+  }
+
+  await videoEncoder.flush();
+  muxer.finalize();
+  const { buffer } = target;
+  const blob = new Blob([buffer], { type: 'video/mp4' });
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.mp4');
 }
 
 /* ─── Main export dispatcher ─── */
@@ -1248,73 +1583,15 @@ async function exportWAV() {
   downloadBlob(blob, 'wolf-export.wav');
 }
 
-/* ─── MP3 via FFmpeg WASM ─── */
-async function exportMP3() {
-  setExportStatus('Decoding audio tracks…'); setExportBar(5);
-  const audioBuf = await mixAudio(p => setExportBar(5 + p * 40));
-
-  setExportStatus('Encoding WAV…'); setExportBar(50);
-  const wavBlob = audioBufferToWavBlob(audioBuf);
-
-  const { ffmpeg, fetchFile } = await loadFFmpeg();
-  setExportStatus('Transcoding to MP3…', 'Using FFmpeg WASM'); setExportBar(60);
-
-  const qualMap = { high: '320k', medium: '192k', low: '128k' };
-  const abr = qualMap[document.getElementById('export-quality').value] || '192k';
-
-  await ffmpeg.writeFile('input.wav', await fetchFile(wavBlob));
-  await ffmpeg.exec(['-i', 'input.wav', '-c:a', 'libmp3lame', '-b:a', abr, '-y', 'output.mp3']);
-  const data = await ffmpeg.readFile('output.mp3');
-  const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-  setExportBar(100); setExportStatus('Done! Downloading…');
-  downloadBlob(blob, 'wolf-export.mp3');
-}
-
-/* ─── WebM (no FFmpeg, fast) ─── */
+/* ─── WebM (with audio) ─── */
 async function exportWebM(fps) {
-  setExportStatus('Recording frames…'); setExportBar(5);
-  const blob = await recordWebM(fps, (p, sub) => { setExportBar(5 + p * 90); setExportStatus('Recording frames…', sub); });
-  setExportBar(100); setExportStatus('Done! Downloading…');
-  downloadBlob(blob, 'wolf-export.webm');
-}
-
-/* ─── MP4 via FFmpeg WASM: record WebM first, then transcode ─── */
-async function exportMP4(fps) {
-  // Step 1: Record to WebM (0–60%)
-  setExportStatus('Recording frames to WebM…'); setExportBar(3);
-  const webmBlob = await recordWebM(fps, (p, sub) => {
-    setExportBar(3 + p * 55);
+  setExportStatus('Recording frames…'); setExportBar(3);
+  const blob = await recordWebMWithAudio(fps, (p, sub) => {
+    setExportBar(3 + p * 94);
     setExportStatus('Recording frames…', sub);
   });
-  if (exportAborted) return;
-
-  // Step 2: Load FFmpeg (shown in its own status)
-  setExportBar(60);
-  const { ffmpeg, fetchFile } = await loadFFmpeg();
-  if (exportAborted) return;
-
-  // Step 3: Transcode WebM → MP4 (H.264)
-  setExportStatus('Transcoding WebM → MP4 (H.264)…', 'Using FFmpeg WASM'); setExportBar(65);
-
-  const qualMap = { high: '18', medium: '23', low: '28' }; // CRF: lower = better
-  const crf = qualMap[document.getElementById('export-quality').value] || '23';
-
-  await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
-  await ffmpeg.exec([
-    '-i', 'input.webm',
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', crf,
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-movflags', '+faststart',
-    '-y', 'output.mp4'
-  ]);
-
-  const data = await ffmpeg.readFile('output.mp4');
-  const blob = new Blob([data.buffer], { type: 'video/mp4' });
   setExportBar(100); setExportStatus('Done! Downloading…');
-  downloadBlob(blob, 'wolf-export.mp4');
+  downloadBlob(blob, 'wolf-export.webm');
 }
 
 /* ─── Download helper ─── */
@@ -1349,6 +1626,3 @@ document.getElementById('tl-zoom-label').textContent = tlPxPerSec + 'px/s';
 </script>
 </body>
 </html>
-
-
- <!-- TODO: fix export problems -->
