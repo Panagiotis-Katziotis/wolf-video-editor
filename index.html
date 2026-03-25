@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WOLF — Video Editor</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- FFmpeg WASM for real MP4/MP3 encoding -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -58,7 +60,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .panel-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 .psec-title{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;margin-top:4px}
 
-/* clip cards in media panel */
 .clip-card{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px;cursor:pointer;transition:all .14s;position:relative}
 .clip-card:hover{border-color:var(--accent);background:var(--surface3)}
 .clip-card.active{border-color:var(--accent);background:var(--surface3)}
@@ -68,7 +69,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .cc-type.video{background:rgba(74,184,255,.15);color:var(--blue)}
 .cc-type.audio{background:rgba(68,255,170,.15);color:var(--green)}
 
-/* props */
 .prop-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .prop-label{font-size:10px;color:var(--muted);min-width:62px;letter-spacing:.04em}
 .prop-input{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 8px;border-radius:3px;flex:1;transition:border-color .14s}
@@ -81,7 +81,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .slider-header{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
 .slider-header span:last-child{color:var(--text)}
 
-/* subtitle list */
 .sub-item{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:border-color .14s;position:relative}
 .sub-item.selected{border-color:var(--accent)}
 .sub-item .si-time{font-size:10px;color:var(--accent2);margin-bottom:3px}
@@ -89,7 +88,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .sub-del{position:absolute;top:6px;right:6px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:1px 4px;border-radius:2px}
 .sub-del:hover{color:var(--red)}
 
-/* transition cards */
 .tr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tr-card{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 8px;text-align:center;cursor:pointer;transition:all .14s;font-size:10px;letter-spacing:.05em;color:var(--muted)}
 .tr-card:hover{border-color:var(--accent);color:var(--text)}
@@ -99,7 +97,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 /* ── CENTER ── */
 #center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
-/* preview */
 #preview-area{height:var(--preview-h);background:#000;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-bottom:1px solid var(--border)}
 #preview-video{max-width:100%;max-height:100%;display:block}
 #preview-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
@@ -108,7 +105,6 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 #no-media p{font-size:10px;letter-spacing:.1em}
 #subtitle-overlay{position:absolute;bottom:18px;left:0;right:0;text-align:center;pointer-events:none;font-family:'DM Sans',sans-serif;font-weight:600;font-size:18px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 3px #000;letter-spacing:.02em;padding:4px 24px 6px;line-height:1.4;display:none;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
 
-/* playbar */
 #playbar{height:44px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:12px;flex-shrink:0}
 .play-btn{width:32px;height:32px;background:var(--accent);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .14s;flex-shrink:0}
 .play-btn:hover{background:#40c9ff}
@@ -132,14 +128,11 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 #timeline-scroll::-webkit-scrollbar-track{background:var(--surface)}
 #timeline-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 #timeline-inner{position:relative;min-width:100%;height:100%;display:flex;flex-direction:column}
-/* ruler */
 #tl-ruler{height:22px;background:var(--surface2);border-bottom:1px solid var(--border);position:relative;flex-shrink:0;overflow:hidden}
-/* tracks */
 #tl-tracks{flex:1;position:relative;overflow:hidden}
 .tl-track{height:44px;border-bottom:1px solid var(--border);position:relative;display:flex;align-items:center}
 .tl-track-label{width:80px;flex-shrink:0;font-size:10px;color:var(--muted);letter-spacing:.06em;padding:0 10px;border-right:1px solid var(--border);height:100%;display:flex;align-items:center}
 .tl-track-body{flex:1;position:relative;height:100%;overflow:hidden}
-/* clips on timeline */
 .tl-clip{position:absolute;top:4px;height:36px;border-radius:3px;cursor:pointer;overflow:hidden;display:flex;align-items:center;padding:0 8px;font-size:10px;white-space:nowrap;border:1px solid transparent;transition:border-color .14s;user-select:none}
 .tl-clip.video-clip{background:rgba(74,184,255,.18);border-color:rgba(74,184,255,.3);color:var(--blue)}
 .tl-clip.audio-clip{background:rgba(68,255,170,.15);border-color:rgba(68,255,170,.25);color:var(--green)}
@@ -147,14 +140,12 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .tl-clip .clip-resize-r{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;background:rgba(255,255,255,.12);border-left:2px solid rgba(255,255,255,.25);z-index:2}
 .tl-clip .clip-resize-l{position:absolute;left:0;top:0;bottom:0;width:10px;cursor:ew-resize;background:rgba(255,255,255,.12);border-right:2px solid rgba(255,255,255,.25);z-index:2}
 .tl-clip .clip-resize-r:hover,.tl-clip .clip-resize-l:hover{background:rgba(255,107,43,.35)}
-/* subtitle clip on track */
 .sub-tl-clip{position:absolute;top:2px;height:28px;border-radius:3px;cursor:grab;overflow:hidden;display:flex;align-items:center;padding:0 10px;font-size:9px;white-space:nowrap;border:1px solid rgba(255,179,71,.45);background:rgba(255,179,71,.15);color:var(--accent2);user-select:none;z-index:1}
 .sub-tl-clip.selected{border-color:var(--accent)!important;background:rgba(255,107,43,.18)!important}
 .sub-tl-clip:active{cursor:grabbing}
 .sub-tl-clip .sub-resize-l{position:absolute;left:0;top:0;bottom:0;width:8px;cursor:ew-resize;background:rgba(255,179,71,.2);border-right:2px solid rgba(255,179,71,.5);z-index:2}
 .sub-tl-clip .sub-resize-r{position:absolute;right:0;top:0;bottom:0;width:8px;cursor:ew-resize;background:rgba(255,179,71,.2);border-left:2px solid rgba(255,179,71,.5);z-index:2}
 .sub-tl-clip .sub-resize-l:hover,.sub-tl-clip .sub-resize-r:hover{background:rgba(255,107,43,.4)}
-/* playhead */
 #tl-playhead{position:absolute;top:0;bottom:0;left:80px;width:1px;background:var(--accent);z-index:10;pointer-events:none}
 #tl-playhead::before{content:'';position:absolute;top:0;left:-4px;border:4px solid transparent;border-top:6px solid var(--accent)}
 
@@ -162,37 +153,32 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 #right-panel{width:var(--panel-w);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
 .rpanel-title{font-size:10px;letter-spacing:.12em;color:var(--muted);padding:12px 14px 8px;text-transform:uppercase;border-bottom:1px solid var(--border)}
 
-/* export modal */
+/* ── EXPORT MODAL ── */
 #export-modal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:none;align-items:center;justify-content:center}
 #export-modal.open{display:flex}
-.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:24px;width:360px;max-width:95vw}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:24px;width:400px;max-width:95vw}
 .modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--accent);letter-spacing:.1em;margin-bottom:18px}
 .modal-row{margin-bottom:14px}
 .modal-label{font-size:10px;color:var(--muted);letter-spacing:.08em;margin-bottom:6px}
 .modal-btns{display:flex;gap:10px;margin-top:20px}
 .modal-btns .tbtn{flex:1;text-align:center}
-
 input[type=file]{display:none}
 
-/* progress bar for export */
+/* Export progress */
 #export-progress{display:none;margin-top:14px}
-#export-bar-wrap{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:6px}
-#export-bar{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width .3s}
-#export-status{font-size:10px;color:var(--muted);letter-spacing:.06em}
+#export-bar-wrap{height:5px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:8px;margin-bottom:6px}
+#export-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;width:0%;transition:width .25s}
+#export-status{font-size:10px;color:var(--muted);letter-spacing:.06em;line-height:1.6}
+#export-substatus{font-size:9px;color:var(--muted2);letter-spacing:.04em;margin-top:2px}
+
+/* FFmpeg loader notice */
+#ffmpeg-status{font-size:9px;color:var(--muted2);letter-spacing:.04em;padding:6px 0 0;display:none}
+#ffmpeg-status.visible{display:block}
 
 .no-clip-msg{font-size:10px;color:var(--muted2);text-align:center;padding:20px 10px;line-height:1.8}
-
-/* waveform mini */
-.waveform-bars{display:flex;align-items:center;gap:1px;height:20px;padding:0 2px;pointer-events:none}
-.wv-bar{flex:1;background:rgba(68,255,170,.4);border-radius:1px;min-height:2px}
-
-/* scrollbar global */
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-
-.tag{display:inline-block;padding:1px 6px;border-radius:2px;font-size:9px;letter-spacing:.06em}
-.tag.new{background:rgba(255,107,43,.15);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -208,7 +194,7 @@ input[type=file]{display:none}
   <button class="tbtn" id="btn-undo" disabled onclick="doUndo()">↩ Undo</button>
   <button class="tbtn" id="btn-redo" disabled onclick="doRedo()">↪ Redo</button>
   <div id="tb-right">
-    <span id="playhead-time">00:00.000</span>
+    <span id="playhead-time">00:00.00</span>
     <div class="sep"></div>
     <button class="tbtn" onclick="openExportModal()">↓ Export</button>
   </div>
@@ -224,16 +210,12 @@ input[type=file]{display:none}
       <div class="ptab" data-tab="subs" onclick="switchTab('subs')">SUBS</div>
       <div class="ptab" data-tab="transitions" onclick="switchTab('transitions')">FX</div>
     </div>
-
-    <!-- MEDIA TAB -->
     <div class="panel-body" id="tab-media">
       <div class="psec-title">Imported Files</div>
       <div id="media-list">
         <div class="no-clip-msg">No media yet.<br>Click "＋ Import Media" above<br>to load .mp4 / .mp3 / .wav / .m4a</div>
       </div>
     </div>
-
-    <!-- SUBS TAB -->
     <div class="panel-body" id="tab-subs" style="display:none">
       <div class="psec-title">Subtitles</div>
       <div class="prop-row">
@@ -252,8 +234,6 @@ input[type=file]{display:none}
       <div class="psec-title">Subtitle List</div>
       <div id="sub-list"><div class="no-clip-msg" style="padding:10px">No subtitles yet.</div></div>
     </div>
-
-    <!-- TRANSITIONS TAB -->
     <div class="panel-body" id="tab-transitions" style="display:none">
       <div class="psec-title">Clip Transition</div>
       <p style="font-size:10px;color:var(--muted);line-height:1.7;margin-bottom:12px">Select a clip on the timeline, then pick a transition that plays at its end.</p>
@@ -274,7 +254,6 @@ input[type=file]{display:none}
 
   <!-- CENTER -->
   <div id="center">
-    <!-- PREVIEW -->
     <div id="preview-area">
       <div id="no-media">
         <div class="nm-logo">WOLF</div>
@@ -284,8 +263,6 @@ input[type=file]{display:none}
       <canvas id="preview-canvas"></canvas>
       <div id="subtitle-overlay"></div>
     </div>
-
-    <!-- PLAYBAR -->
     <div id="playbar">
       <button class="play-btn" id="play-btn" onclick="togglePlay()">
         <svg id="play-icon" width="12" height="14" viewBox="0 0 12 14" fill="#0a0a0b"><polygon points="0,0 12,7 0,14"/></svg>
@@ -299,8 +276,6 @@ input[type=file]{display:none}
       <span class="vol-icon" onclick="toggleMute()">🔊</span>
       <input id="vol-slider" type="range" min="0" max="1" step="0.01" value="1" oninput="setVolume()">
     </div>
-
-    <!-- TIMELINE -->
     <div id="timeline-wrap">
       <div id="tl-header">
         <span>TIMELINE</span>
@@ -348,70 +323,75 @@ input[type=file]{display:none}
     <div class="modal-row">
       <div class="modal-label">FORMAT</div>
       <select class="prop-select" id="export-format" onchange="updateExportUI()">
-        <option value="mp4">MP4 (Video)</option>
+        <option value="mp4">MP4 (H.264 Video)</option>
         <option value="mp3">MP3 (Audio only)</option>
-        <option value="webm">WebM (Video)</option>
+        <option value="webm">WebM (fast, no transcode)</option>
+        <option value="wav">WAV (Audio only, fast)</option>
       </select>
     </div>
     <div class="modal-row" id="export-quality-row">
-      <div class="modal-label">QUALITY</div>
+      <div class="modal-label">QUALITY / BITRATE</div>
       <select class="prop-select" id="export-quality">
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
+        <option value="high">High (8 Mbps video / 320k audio)</option>
+        <option value="medium" selected>Medium (4 Mbps / 192k)</option>
+        <option value="low">Low (1.5 Mbps / 128k)</option>
       </select>
     </div>
     <div class="modal-row" id="export-fps-row">
       <div class="modal-label">FRAME RATE</div>
       <select class="prop-select" id="export-fps">
-        <option value="30">30 fps</option>
+        <option value="30" selected>30 fps</option>
         <option value="24">24 fps</option>
         <option value="60">60 fps</option>
       </select>
     </div>
     <div id="export-progress">
       <div id="export-status">Preparing…</div>
+      <div id="export-substatus"></div>
       <div id="export-bar-wrap"><div id="export-bar"></div></div>
     </div>
+    <div id="ffmpeg-status">⚙ FFmpeg WASM loading from CDN (~30 MB, first time only)…</div>
     <div class="modal-btns">
-      <button class="tbtn" onclick="closeExportModal()">Cancel</button>
+      <button class="tbtn" id="export-cancel-btn" onclick="closeExportModal()">Cancel</button>
       <button class="tbtn primary" id="export-go-btn" onclick="startExport()">Export Now</button>
     </div>
   </div>
 </div>
 
+<!-- FFmpeg WASM (loaded lazily on first export of mp4/mp3) -->
 <script>
 /* ═══════════════════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════════════════ */
-let mediaFiles = [];   // { id, file, url, name, type, duration }
-let clips = [];        // { id, mediaId, track, startTime, duration, trimStart, trimEnd, speed, transition, transitionDur, volume }
-let subtitles = [];    // { id, start, end, text }
+let mediaFiles = [];
+let clips = [];
+let subtitles = [];
 let selectedClipId = null;
 let selectedSubId = null;
 let currentTime = 0;
 let totalDuration = 0;
 let isPlaying = false;
-let tlPxPerSec = 100;  // timeline zoom
+let tlPxPerSec = 100;
 let idCounter = 0;
 let rafId = null;
 let playStartWallTime = 0;
 let playStartMediaTime = 0;
-let activeMediaEl = null; // currently playing video/audio element
-let mediaElements = {};   // mediaId -> HTMLElement (video or audio)
+let activeMediaEl = null;
+let mediaElements = {};
 let history = [];
 let historyIndex = -1;
 const MAX_HIST = 40;
+let ffmpegInstance = null; // lazy-loaded FFmpeg
 
 /* ═══════════════════════════════════════════════════════════
    UTILITIES
 ═══════════════════════════════════════════════════════════ */
 function uid() { return ++idCounter; }
 function fmt(s) {
-  const m = Math.floor(s/60), sec = (s%60).toFixed(2).padStart(5,'0');
-  return `${String(m).padStart(2,'0')}:${sec}`;
+  const m = Math.floor(s / 60), sec = (s % 60).toFixed(2).padStart(5, '0');
+  return `${String(m).padStart(2, '0')}:${sec}`;
 }
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 /* ═══════════════════════════════════════════════════════════
    UNDO / REDO
@@ -430,7 +410,7 @@ function restoreHistory(snap) {
   rebuildTimeline(); renderSubList(); updateTotalDuration(); renderSubTrack();
 }
 function doUndo() { if (historyIndex > 0) { historyIndex--; restoreHistory(history[historyIndex]); updateUndoRedoBtns(); } }
-function doRedo() { if (historyIndex < history.length-1) { historyIndex++; restoreHistory(history[historyIndex]); updateUndoRedoBtns(); } }
+function doRedo() { if (historyIndex < history.length - 1) { historyIndex++; restoreHistory(history[historyIndex]); updateUndoRedoBtns(); } }
 function updateUndoRedoBtns() {
   document.getElementById('btn-undo').disabled = historyIndex <= 0;
   document.getElementById('btn-redo').disabled = historyIndex >= history.length - 1;
@@ -446,13 +426,12 @@ document.getElementById('file-input').addEventListener('change', e => {
 
 function importFile(file) {
   const url = URL.createObjectURL(file);
-  const isVideo = file.type.startsWith('video/') || file.name.endsWith('.mp4');
-  const isAudio = !isVideo;
+  const isVideo = file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|mkv|avi|webm)$/i);
   const el = isVideo ? document.createElement('video') : document.createElement('audio');
   el.src = url;
   el.preload = 'metadata';
   el.onloadedmetadata = () => {
-    const mf = { id: uid(), file, url, name: file.name.replace(/\.[^.]+$/,''), type: isVideo ? 'video' : 'audio', duration: el.duration };
+    const mf = { id: uid(), file, url, name: file.name.replace(/\.[^.]+$/, ''), type: isVideo ? 'video' : 'audio', duration: el.duration };
     mediaFiles.push(mf);
     el.id = 'media-el-' + mf.id;
     el.style.display = 'none';
@@ -469,7 +448,7 @@ function renderMediaList() {
   const list = document.getElementById('media-list');
   if (!mediaFiles.length) { list.innerHTML = '<div class="no-clip-msg">No media yet.<br>Click "＋ Import Media" above.</div>'; return; }
   list.innerHTML = mediaFiles.map(mf => `
-    <div class="clip-card ${selectedClipId && clips.find(c=>c.mediaId===mf.id&&c.id===selectedClipId)?'active':''}" onclick="selectMediaClip(${mf.id})">
+    <div class="clip-card ${selectedClipId && clips.find(c => c.mediaId === mf.id && c.id === selectedClipId) ? 'active' : ''}" onclick="selectMediaClip(${mf.id})">
       <div class="cc-name">${mf.name}</div>
       <div class="cc-meta">${fmt(mf.duration)} · ${mf.file.name.split('.').pop().toUpperCase()}</div>
       <div class="cc-type ${mf.type}">${mf.type.toUpperCase()}</div>
@@ -485,15 +464,10 @@ function selectMediaClip(mediaId) {
    TIMELINE CLIP MANAGEMENT
 ═══════════════════════════════════════════════════════════ */
 function addClipToTimeline(mf) {
-  // Place after last clip on same track
   const track = mf.type === 'video' ? 'video' : 'audio';
   const existing = clips.filter(c => c.track === track);
   const startTime = existing.length ? Math.max(...existing.map(c => c.startTime + c.duration)) : 0;
-  const clip = {
-    id: uid(), mediaId: mf.id, track, startTime,
-    duration: mf.duration, trimStart: 0, trimEnd: mf.duration,
-    speed: 1, transition: 'none', transitionDur: 0.5, volume: 1
-  };
+  const clip = { id: uid(), mediaId: mf.id, track, startTime, duration: mf.duration, trimStart: 0, trimEnd: mf.duration, speed: 1, transition: 'none', transitionDur: 0.5, volume: 1 };
   clips.push(clip);
   rebuildTimeline();
   updateTotalDuration();
@@ -519,7 +493,6 @@ function rebuildRuler() {
     tick.innerHTML = `<span style="font-size:9px;color:var(--muted2);letter-spacing:.04em">${fmt(t)}</span>`;
     ruler.appendChild(tick);
   }
-  // update track body widths
   document.querySelectorAll('.tl-track-body').forEach(b => b.style.width = (w - 80) + 'px');
   document.getElementById('timeline-inner').style.width = w + 'px';
 }
@@ -565,7 +538,7 @@ function renderSubTrack() {
     el.dataset.subId = sub.id;
     el.innerHTML = `
       <div class="sub-resize-l" data-sub="${sub.id}" data-side="l"></div>
-      <span style="pointer-events:none;flex:1;overflow:hidden;text-overflow:ellipsis;padding:0 4px">${sub.text.substring(0,24)}${sub.text.length>24?'…':''}</span>
+      <span style="pointer-events:none;flex:1;overflow:hidden;text-overflow:ellipsis;padding:0 4px">${sub.text.substring(0, 24)}${sub.text.length > 24 ? '…' : ''}</span>
       <div class="sub-resize-r" data-sub="${sub.id}" data-side="r"></div>`;
     el.addEventListener('mousedown', subClipMouseDown);
     body.appendChild(el);
@@ -589,28 +562,24 @@ function renderClipProps() {
   const mf = mediaFiles.find(m => m.id === clip.mediaId);
   body.innerHTML = `
     <div class="psec-title" style="margin-top:0">${mf ? mf.name : 'Clip'}</div>
-
     <div class="slider-row">
       <div class="slider-header"><span>Trim Start</span><span id="rp-ts">${clip.trimStart.toFixed(2)}s</span></div>
-      <input class="wslider" type="range" min="0" max="${(mf?mf.duration:clip.duration).toFixed(2)}" step="0.01"
+      <input class="wslider" type="range" min="0" max="${(mf ? mf.duration : clip.duration).toFixed(2)}" step="0.01"
         value="${clip.trimStart}" id="rp-ts-slider" oninput="updateTrimStart(this.value)">
     </div>
     <div class="slider-row">
       <div class="slider-header"><span>Trim End</span><span id="rp-te">${clip.trimEnd.toFixed(2)}s</span></div>
-      <input class="wslider" type="range" min="0" max="${(mf?mf.duration:clip.duration).toFixed(2)}" step="0.01"
+      <input class="wslider" type="range" min="0" max="${(mf ? mf.duration : clip.duration).toFixed(2)}" step="0.01"
         value="${clip.trimEnd}" id="rp-te-slider" oninput="updateTrimEnd(this.value)">
     </div>
-
     <div class="slider-row">
       <div class="slider-header"><span>Speed</span><span id="rp-sp">${clip.speed}x</span></div>
       <input class="wslider" type="range" min="0.25" max="4" step="0.05" value="${clip.speed}" id="rp-sp-slider" oninput="updateSpeed(this.value)">
     </div>
-
     <div class="slider-row">
-      <div class="slider-header"><span>Volume</span><span id="rp-vol">${Math.round(clip.volume*100)}%</span></div>
+      <div class="slider-header"><span>Volume</span><span id="rp-vol">${Math.round(clip.volume * 100)}%</span></div>
       <input class="wslider" type="range" min="0" max="1" step="0.01" value="${clip.volume}" id="rp-vol-slider" oninput="updateClipVolume(this.value)">
     </div>
-
     <div class="prop-row" style="margin-top:4px">
       <span class="prop-label">Position</span>
       <input class="prop-input" type="number" min="0" step="0.1" value="${clip.startTime.toFixed(2)}" id="rp-pos" oninput="updateClipPos(this.value)">
@@ -619,7 +588,6 @@ function renderClipProps() {
       <span class="prop-label">Duration</span>
       <input class="prop-input" value="${clip.duration.toFixed(2)}s" disabled style="opacity:.6">
     </div>
-
     <div style="margin-top:10px">
       <button class="tbtn" style="width:100%;color:var(--red);border-color:var(--red)" onclick="deleteSelectedClip()">✕ Remove Clip</button>
     </div>`;
@@ -627,7 +595,6 @@ function renderClipProps() {
 
 function updateTrimStart(v) {
   const clip = clips.find(c => c.id === selectedClipId); if (!clip) return;
-  const mf = mediaFiles.find(m => m.id === clip.mediaId);
   clip.trimStart = parseFloat(v);
   if (clip.trimStart >= clip.trimEnd - 0.1) clip.trimStart = clip.trimEnd - 0.1;
   clip.duration = (clip.trimEnd - clip.trimStart) / clip.speed;
@@ -652,7 +619,7 @@ function updateSpeed(v) {
 function updateClipVolume(v) {
   const clip = clips.find(c => c.id === selectedClipId); if (!clip) return;
   clip.volume = parseFloat(v);
-  document.getElementById('rp-vol').textContent = Math.round(clip.volume*100) + '%';
+  document.getElementById('rp-vol').textContent = Math.round(clip.volume * 100) + '%';
   saveHistory();
 }
 function updateClipPos(v) {
@@ -667,26 +634,19 @@ function deleteSelectedClip() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   TIMELINE DRAG — clips + subtitle clips
+   DRAG
 ═══════════════════════════════════════════════════════════ */
 let dragState = null;
 
-// ── Clip drag (move body) ──────────────────────────────
 function clipMouseDown(e) {
   const side = e.target.dataset.side;
   if (side) {
-    // Resize handle on clip
     e.preventDefault(); e.stopPropagation();
     const clipId = parseInt(e.target.dataset.clip);
     const clip = clips.find(c => c.id === clipId);
     if (!clip) return;
     selectClip(clipId);
-    dragState = {
-      type: 'clip-resize', side,
-      clipId, startX: e.clientX,
-      origDur: clip.duration, origStart: clip.startTime,
-      origTrimStart: clip.trimStart, origTrimEnd: clip.trimEnd
-    };
+    dragState = { type: 'clip-resize', side, clipId, startX: e.clientX, origDur: clip.duration, origStart: clip.startTime, origTrimStart: clip.trimStart, origTrimEnd: clip.trimEnd };
     window.addEventListener('mousemove', onDragMove);
     window.addEventListener('mouseup', onDragUp);
     return;
@@ -702,7 +662,6 @@ function clipMouseDown(e) {
   window.addEventListener('mouseup', onDragUp);
 }
 
-// ── Subtitle drag (move body + resize handles) ──────────
 function subClipMouseDown(e) {
   const side = e.target.dataset.side;
   const subId = parseInt(e.target.dataset.sub || e.currentTarget.dataset.subId);
@@ -711,17 +670,10 @@ function subClipMouseDown(e) {
   e.preventDefault(); e.stopPropagation();
   selectedSubId = subId;
   renderSubTrack();
-
   if (side) {
-    dragState = {
-      type: 'sub-resize', side, subId,
-      startX: e.clientX, origStart: sub.start, origEnd: sub.end
-    };
+    dragState = { type: 'sub-resize', side, subId, startX: e.clientX, origStart: sub.start, origEnd: sub.end };
   } else {
-    dragState = {
-      type: 'sub-move', subId,
-      startX: e.clientX, origStart: sub.start, origEnd: sub.end
-    };
+    dragState = { type: 'sub-move', subId, startX: e.clientX, origStart: sub.start, origEnd: sub.end };
   }
   window.addEventListener('mousemove', onDragMove);
   window.addEventListener('mouseup', onDragUp);
@@ -730,26 +682,21 @@ function subClipMouseDown(e) {
 function onDragMove(e) {
   if (!dragState) return;
   const dx = (e.clientX - dragState.startX) / tlPxPerSec;
-
   if (dragState.type === 'clip-move') {
     const clip = clips.find(c => c.id === dragState.clipId);
     if (!clip) return;
     clip.startTime = Math.max(0, dragState.origStart + dx);
     rebuildTimeline();
-
   } else if (dragState.type === 'clip-resize') {
     const clip = clips.find(c => c.id === dragState.clipId);
     if (!clip) return;
     const mf = mediaFiles.find(m => m.id === clip.mediaId);
     const maxDur = mf ? mf.duration : 9999;
-
     if (dragState.side === 'r') {
-      // Drag right edge: extend/shrink trimEnd
       const newTrimEnd = Math.min(maxDur, Math.max(dragState.origTrimStart + 0.2, dragState.origTrimEnd + dx * clip.speed));
       clip.trimEnd = newTrimEnd;
       clip.duration = (clip.trimEnd - clip.trimStart) / clip.speed;
     } else {
-      // Drag left edge: move startTime + adjust trimStart
       const newStart = Math.max(0, dragState.origStart + dx);
       const actualDx = newStart - dragState.origStart;
       const newTrimStart = Math.min(dragState.origTrimEnd - 0.2, Math.max(0, dragState.origTrimStart + actualDx * clip.speed));
@@ -758,7 +705,6 @@ function onDragMove(e) {
       clip.duration = (clip.trimEnd - clip.trimStart) / clip.speed;
     }
     rebuildTimeline();
-
   } else if (dragState.type === 'sub-move') {
     const sub = subtitles.find(s => s.id === dragState.subId);
     if (!sub) return;
@@ -766,7 +712,6 @@ function onDragMove(e) {
     sub.start = Math.max(0, dragState.origStart + dx);
     sub.end = sub.start + dur;
     renderSubTrack(); renderSubList();
-
   } else if (dragState.type === 'sub-resize') {
     const sub = subtitles.find(s => s.id === dragState.subId);
     if (!sub) return;
@@ -794,7 +739,7 @@ function addSubtitle() {
   const text = document.getElementById('sub-text').value.trim();
   if (!text) return;
   subtitles.push({ id: uid(), start, end, text });
-  subtitles.sort((a,b) => a.start - b.start);
+  subtitles.sort((a, b) => a.start - b.start);
   renderSubList(); renderSubTrack();
   document.getElementById('sub-text').value = '';
   document.getElementById('sub-start').value = end;
@@ -834,9 +779,7 @@ function updateTrDur() {
 /* ═══════════════════════════════════════════════════════════
    PLAYBACK ENGINE
 ═══════════════════════════════════════════════════════════ */
-function togglePlay() {
-  if (isPlaying) pause(); else play();
-}
+function togglePlay() { if (isPlaying) pause(); else play(); }
 
 function play() {
   if (!clips.length) return;
@@ -856,9 +799,7 @@ function pause() {
   stopActiveMedia();
 }
 
-function requestFrame() {
-  rafId = requestAnimationFrame(tick);
-}
+function requestFrame() { rafId = requestAnimationFrame(tick); }
 
 let lastActiveClipId = null;
 
@@ -875,24 +816,16 @@ function tick(now) {
 
 function updateSubtitleOverlay(text) {
   const subOverlay = document.getElementById('subtitle-overlay');
-  if (text) {
-    subOverlay.textContent = text;
-    subOverlay.style.display = '';
-  } else {
-    subOverlay.style.display = 'none';
-  }
+  if (text) { subOverlay.textContent = text; subOverlay.style.display = ''; }
+  else { subOverlay.style.display = 'none'; }
 }
 
 function drivePlayback() {
-  // Find which clip should be playing at currentTime
   const clip = getClipAt(currentTime);
-
   if (clip) {
     const el = mediaElements[clip.mediaId];
     const mediaTime = clip.trimStart + (currentTime - clip.startTime) * clip.speed;
-
     if (lastActiveClipId !== clip.id) {
-      // switched clip — seek new element
       stopActiveMedia();
       lastActiveClipId = clip.id;
       activeMediaEl = el;
@@ -906,13 +839,12 @@ function drivePlayback() {
         pv.currentTime = mediaTime;
         pv.playbackRate = clip.speed;
         pv.volume = clip.volume;
-        pv.play().catch(()=>{});
+        pv.play().catch(() => {});
         document.getElementById('no-media').style.display = 'none';
       } else {
-        el.play().catch(()=>{});
+        el.play().catch(() => {});
       }
     } else {
-      // drift correction — resync if more than 200ms off
       const expected = mediaTime;
       const actual = activeMediaEl ? activeMediaEl.currentTime : 0;
       if (Math.abs(actual - expected) > 0.2) {
@@ -921,28 +853,21 @@ function drivePlayback() {
         if (pv.src && el.tagName === 'VIDEO') pv.currentTime = expected;
       }
     }
-
-    // transitions (visual effect on canvas)
     applyTransitionEffect(clip);
   } else {
     stopActiveMedia();
     lastActiveClipId = null;
   }
-
-  // Subtitles
   const sub = subtitles.find(s => currentTime >= s.start && currentTime < s.end);
   updateSubtitleOverlay(sub ? sub.text : null);
-
   document.getElementById('duration-label').textContent = `${fmt(currentTime)} / ${fmt(totalDuration)}`;
   document.getElementById('playhead-time').textContent = fmt(currentTime);
 }
 
-function getClipAt(t) {
-  return clips.find(c => t >= c.startTime && t < c.startTime + c.duration) || null;
-}
+function getClipAt(t) { return clips.find(c => t >= c.startTime && t < c.startTime + c.duration) || null; }
 
 function stopActiveMedia() {
-  if (activeMediaEl) { try { activeMediaEl.pause(); } catch(e){} }
+  if (activeMediaEl) { try { activeMediaEl.pause(); } catch (e) {} }
   const pv = document.getElementById('preview-video');
   pv.pause();
   activeMediaEl = null;
@@ -957,41 +882,38 @@ const cctx = cvs.getContext('2d');
 function applyTransitionEffect(clip) {
   const pa = document.getElementById('preview-area');
   cvs.width = pa.clientWidth; cvs.height = pa.clientHeight;
-  cctx.clearRect(0,0,cvs.width,cvs.height);
-
+  cctx.clearRect(0, 0, cvs.width, cvs.height);
   const tr = clip.transition;
   if (tr === 'none') return;
-
   const tEnd = clip.startTime + clip.duration;
   const tDur = clip.transitionDur;
   const timeIntoEnd = currentTime - (tEnd - tDur);
   if (timeIntoEnd < 0) return;
   const progress = clamp(timeIntoEnd / tDur, 0, 1);
-
   if (tr === 'fade') {
     cctx.globalAlpha = progress;
     cctx.fillStyle = 'rgba(255,255,255,1)';
-    cctx.fillRect(0,0,cvs.width,cvs.height);
+    cctx.fillRect(0, 0, cvs.width, cvs.height);
   } else if (tr === 'fadeblack') {
     cctx.globalAlpha = progress;
     cctx.fillStyle = '#000';
-    cctx.fillRect(0,0,cvs.width,cvs.height);
+    cctx.fillRect(0, 0, cvs.width, cvs.height);
   } else if (tr === 'slideright') {
     const x = progress * cvs.width;
     cctx.fillStyle = '#000';
-    cctx.fillRect(0,0,x,cvs.height);
+    cctx.fillRect(0, 0, x, cvs.height);
   } else if (tr === 'slideleft') {
-    const x = (1-progress) * cvs.width;
+    const x = (1 - progress) * cvs.width;
     cctx.fillStyle = '#000';
-    cctx.fillRect(x,0,cvs.width-x,cvs.height);
+    cctx.fillRect(x, 0, cvs.width - x, cvs.height);
   } else if (tr === 'zoom') {
     const pv = document.getElementById('preview-video');
     if (pv.videoWidth) {
       cctx.save();
       const s = 1 + progress * 0.3;
-      cctx.translate(cvs.width/2, cvs.height/2);
-      cctx.scale(s,s);
-      cctx.translate(-cvs.width/2,-cvs.height/2);
+      cctx.translate(cvs.width / 2, cvs.height / 2);
+      cctx.scale(s, s);
+      cctx.translate(-cvs.width / 2, -cvs.height / 2);
       cctx.globalAlpha = 1 - progress * 0.5;
       cctx.drawImage(pv, 0, 0, cvs.width, cvs.height);
       cctx.restore();
@@ -1007,14 +929,13 @@ let scrubbing = false;
 
 function updateScrubber() {
   const pct = totalDuration > 0 ? currentTime / totalDuration : 0;
-  document.getElementById('scrubber-fill').style.width = (pct*100) + '%';
-  document.getElementById('scrubber-thumb').style.left = (pct*100) + '%';
+  document.getElementById('scrubber-fill').style.width = (pct * 100) + '%';
+  document.getElementById('scrubber-thumb').style.left = (pct * 100) + '%';
 }
 
 function updatePlayhead() {
   const x = 80 + currentTime * tlPxPerSec;
   document.getElementById('tl-playhead').style.left = x + 'px';
-  // auto-scroll timeline
   const scroll = document.getElementById('timeline-scroll');
   if (x > scroll.scrollLeft + scroll.clientWidth - 80) scroll.scrollLeft = x - 80;
 }
@@ -1037,13 +958,13 @@ function scrubDown(e) {
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
 }
-function scrubHover(){}
+function scrubHover() {}
 
 function seekTo(t) {
   currentTime = clamp(t, 0, totalDuration);
   playStartMediaTime = currentTime;
   playStartWallTime = performance.now();
-  lastActiveClipId = null; // force resync
+  lastActiveClipId = null;
   updateScrubber();
   updatePlayhead();
   drivePlayback();
@@ -1053,7 +974,6 @@ function seekTo(t) {
   document.getElementById('playhead-time').textContent = fmt(currentTime);
 }
 
-// Timeline click to seek
 document.getElementById('tl-ruler').addEventListener('click', e => {
   const rect = document.getElementById('tl-ruler').getBoundingClientRect();
   const x = e.clientX - rect.left - 80;
@@ -1088,86 +1008,90 @@ function tlZoomOut() { tlPxPerSec = Math.max(20, tlPxPerSec / 1.5); document.get
 ═══════════════════════════════════════════════════════════ */
 function switchTab(tab) {
   document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  ['media','subs','transitions'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? '' : 'none');
+  ['media', 'subs', 'transitions'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
 }
 
 /* ═══════════════════════════════════════════════════════════
-   EXPORT
+   EXPORT MODAL
 ═══════════════════════════════════════════════════════════ */
-function openExportModal() { document.getElementById('export-modal').classList.add('open'); }
-function closeExportModal() { document.getElementById('export-modal').classList.remove('open'); document.getElementById('export-progress').style.display = 'none'; }
+function openExportModal() { document.getElementById('export-modal').classList.add('open'); updateExportUI(); }
+function closeExportModal() {
+  if (exportAborted) return; // don't close mid-export accidentally
+  document.getElementById('export-modal').classList.remove('open');
+  document.getElementById('export-progress').style.display = 'none';
+  document.getElementById('export-go-btn').disabled = false;
+  document.getElementById('ffmpeg-status').classList.remove('visible');
+  exportAborted = false;
+}
+
+let exportAborted = false;
 
 function updateExportUI() {
-  const fmt = document.getElementById('export-format').value;
-  const isAudio = fmt === 'mp3';
-  document.getElementById('export-fps-row').style.display = isAudio ? 'none' : '';
+  const f = document.getElementById('export-format').value;
+  const audioOnly = f === 'mp3' || f === 'wav';
+  document.getElementById('export-fps-row').style.display = audioOnly ? 'none' : '';
+  document.getElementById('export-quality-row').style.display = '';
 }
 
-async function startExport() {
-  const format = document.getElementById('export-format').value;
-  const fps = parseInt(document.getElementById('export-fps').value) || 30;
-  const prog = document.getElementById('export-progress');
-  const bar = document.getElementById('export-bar');
-  const status = document.getElementById('export-status');
-  const btn = document.getElementById('export-go-btn');
+/* ─── helpers ─── */
+function setExportStatus(msg, sub = '') {
+  document.getElementById('export-status').textContent = msg;
+  document.getElementById('export-substatus').textContent = sub;
+}
+function setExportBar(pct) {
+  document.getElementById('export-bar').style.width = clamp(pct, 0, 100) + '%';
+}
 
-  prog.style.display = '';
-  btn.disabled = true;
-  status.textContent = 'Initializing…';
-  bar.style.width = '5%';
-
-  if (!clips.length) { status.textContent = 'No clips to export.'; btn.disabled = false; return; }
-
-  const isAudioOnly = format === 'mp3';
-
-  try {
-    if (isAudioOnly) {
-      await exportAudio(status, bar, btn);
-    } else {
-      await exportVideo(format, fps, status, bar, btn);
+/* ─── WAV encoder (PCM → WAV blob, no FFmpeg needed) ─── */
+function audioBufferToWavBlob(buf) {
+  const numCh = buf.numberOfChannels, sr = buf.sampleRate, len = buf.length;
+  const out = new ArrayBuffer(44 + len * numCh * 2);
+  const view = new DataView(out);
+  function ws(off, str) { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); }
+  function wu16(off, v) { view.setUint16(off, v, true); }
+  function wu32(off, v) { view.setUint32(off, v, true); }
+  ws(0, 'RIFF'); wu32(4, 36 + len * numCh * 2); ws(8, 'WAVE');
+  ws(12, 'fmt '); wu32(16, 16); wu16(20, 1); wu16(22, numCh);
+  wu32(24, sr); wu32(28, sr * numCh * 2); wu16(32, numCh * 2); wu16(34, 16);
+  ws(36, 'data'); wu32(40, len * numCh * 2);
+  let off = 44;
+  for (let i = 0; i < len; i++) {
+    for (let c = 0; c < numCh; c++) {
+      const s = Math.max(-1, Math.min(1, buf.getChannelData(c)[i]));
+      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true); off += 2;
     }
-  } catch(err) {
-    status.textContent = 'Export failed: ' + err.message;
-    bar.style.width = '0%';
-    btn.disabled = false;
   }
+  return new Blob([out], { type: 'audio/wav' });
 }
 
-async function exportAudio(status, bar, btn) {
-  // Use AudioContext to mix all audio clips
+/* ─── Mix audio from all clips into a single AudioBuffer ─── */
+async function mixAudio(onProgress) {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  status.textContent = 'Decoding audio…';
-  bar.style.width = '20%';
-
   const buffers = [];
   let i = 0;
   for (const clip of clips) {
     const mf = mediaFiles.find(m => m.id === clip.mediaId);
-    if (!mf) continue;
+    if (!mf) { i++; continue; }
     try {
       const resp = await fetch(mf.url);
-      const arrayBuf = await resp.arrayBuffer();
-      const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
-      buffers.push({ clip, audioBuf });
-    } catch(e) { /* skip non-audio */ }
+      const ab = await resp.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(ab);
+      buffers.push({ clip, decoded });
+    } catch (e) { /* skip */ }
     i++;
-    bar.style.width = (20 + 40*(i/clips.length)) + '%';
+    onProgress(i / clips.length);
   }
-
-  status.textContent = 'Mixing…';
-  bar.style.width = '65%';
 
   const dur = totalDuration;
   const outBuf = audioCtx.createBuffer(2, Math.ceil(dur * audioCtx.sampleRate), audioCtx.sampleRate);
-
-  for (const {clip, audioBuf} of buffers) {
+  for (const { clip, decoded } of buffers) {
     const speed = clip.speed || 1;
     const trimS = Math.floor(clip.trimStart * audioCtx.sampleRate);
     const trimE = Math.floor(clip.trimEnd * audioCtx.sampleRate);
     const outOffset = Math.floor(clip.startTime * audioCtx.sampleRate);
     const vol = clip.volume || 1;
-    for (let ch = 0; ch < Math.min(2, audioBuf.numberOfChannels); ch++) {
-      const src = audioBuf.getChannelData(ch);
+    for (let ch = 0; ch < Math.min(2, decoded.numberOfChannels); ch++) {
+      const src = decoded.getChannelData(ch);
       const dst = outBuf.getChannelData(ch);
       for (let n = 0; n < (trimE - trimS); n++) {
         const srcIdx = Math.round(trimS + n * speed);
@@ -1176,55 +1100,39 @@ async function exportAudio(status, bar, btn) {
       }
     }
   }
-
-  bar.style.width = '80%';
-  status.textContent = 'Encoding MP3…';
-
-  // Encode as WAV (browser can't encode MP3 natively, use WAV with .mp3 label or use wav)
-  const wav = audioBufferToWav(outBuf);
-  const blob = new Blob([wav], { type: 'audio/wav' });
-  bar.style.width = '100%';
-  status.textContent = 'Done! Downloading…';
-  downloadBlob(blob, 'wolf-export.wav');
-  btn.disabled = false;
-  setTimeout(closeExportModal, 1000);
+  return outBuf;
 }
 
-async function exportVideo(format, fps, status, bar, btn) {
-  // Use MediaRecorder on a canvas
-  const pa = document.getElementById('preview-area');
-  const exportCanvas = document.createElement('canvas');
+/* ─── Render video frames into a canvas, produce a WebM blob ─── */
+async function recordWebM(fps, onProgress) {
   const pv = document.getElementById('preview-video');
+  const exportCanvas = document.createElement('canvas');
   exportCanvas.width = pv.videoWidth || 1280;
   exportCanvas.height = pv.videoHeight || 720;
   const ectx = exportCanvas.getContext('2d');
 
-  const mimeType = format === 'webm' ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
-  if (!MediaRecorder.isTypeSupported(mimeType) && !MediaRecorder.isTypeSupported('video/webm')) {
-    throw new Error('MediaRecorder not supported in this browser. Try Chrome/Edge.');
-  }
+  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m));
+  if (!mimeType) throw new Error('MediaRecorder not supported. Use Chrome or Edge.');
+
+  const qualMap = { high: 8_000_000, medium: 4_000_000, low: 1_500_000 };
+  const vbr = qualMap[document.getElementById('export-quality').value] || 4_000_000;
 
   const stream = exportCanvas.captureStream(fps);
-  // add audio from first video clip if available
+  // Add audio from first video element
   const firstVideoClip = clips.find(c => c.track === 'video');
   if (firstVideoClip) {
     const el = mediaElements[firstVideoClip.mediaId];
     if (el && el.captureStream) {
-      const audioTracks = el.captureStream().getAudioTracks();
-      audioTracks.forEach(t => stream.addTrack(t));
+      el.captureStream().getAudioTracks().forEach(t => stream.addTrack(t));
     }
   }
 
-  const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : 'video/webm', videoBitsPerSecond: 5000000 });
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: vbr });
   const chunks = [];
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-
-  status.textContent = 'Recording frames…';
-  bar.style.width = '10%';
-
   recorder.start(100);
 
-  // scrub through the timeline frame by frame
   const frameTime = 1 / fps;
   let t = 0;
   const totalFrames = Math.ceil(totalDuration * fps);
@@ -1240,14 +1148,11 @@ async function exportVideo(format, fps, status, bar, btn) {
           el.currentTime = clip.trimStart + (t - clip.startTime) * clip.speed;
           ectx.drawImage(el, 0, 0, exportCanvas.width, exportCanvas.height);
         } else {
-          ectx.fillStyle = '#000';
-          ectx.fillRect(0,0,exportCanvas.width,exportCanvas.height);
+          ectx.fillStyle = '#000'; ectx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
         }
       } else {
-        ectx.fillStyle = '#000';
-        ectx.fillRect(0,0,exportCanvas.width,exportCanvas.height);
+        ectx.fillStyle = '#000'; ectx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
       }
-      // draw subtitle
       const sub = subtitles.find(s => t >= s.start && t < s.end);
       if (sub) {
         ectx.font = 'bold 32px DM Sans, sans-serif';
@@ -1255,11 +1160,10 @@ async function exportVideo(format, fps, status, bar, btn) {
         ectx.fillStyle = 'rgba(0,0,0,.6)';
         ectx.fillRect(0, exportCanvas.height - 70, exportCanvas.width, 60);
         ectx.fillStyle = '#fff';
-        ectx.fillText(sub.text, exportCanvas.width/2, exportCanvas.height - 30);
+        ectx.fillText(sub.text, exportCanvas.width / 2, exportCanvas.height - 30);
       }
       t += frameTime; frame++;
-      bar.style.width = (10 + 80 * (frame/totalFrames)) + '%';
-      status.textContent = `Frame ${frame} / ${totalFrames}`;
+      onProgress(frame / totalFrames, `Frame ${frame} / ${totalFrames}`);
       setTimeout(renderFrame, 0);
     }
     renderFrame();
@@ -1267,45 +1171,159 @@ async function exportVideo(format, fps, status, bar, btn) {
 
   recorder.stop();
   await new Promise(r => { recorder.onstop = r; });
-  bar.style.width = '95%';
-  status.textContent = 'Finalizing…';
-  const blob = new Blob(chunks, { type: 'video/webm' });
-  downloadBlob(blob, 'wolf-export.webm');
-  bar.style.width = '100%';
-  status.textContent = 'Done! Downloading…';
-  btn.disabled = false;
-  setTimeout(closeExportModal, 1200);
+  return new Blob(chunks, { type: 'video/webm' });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   WAV ENCODER
-═══════════════════════════════════════════════════════════ */
-function audioBufferToWav(buf) {
-  const numCh = buf.numberOfChannels, sr = buf.sampleRate, len = buf.length;
-  const out = new ArrayBuffer(44 + len * numCh * 2);
-  const view = new DataView(out);
-  function ws(off,str){ for(let i=0;i<str.length;i++) view.setUint8(off+i,str.charCodeAt(i)); }
-  function wu16(off,v){ view.setUint16(off,v,true); }
-  function wu32(off,v){ view.setUint32(off,v,true); }
-  ws(0,'RIFF'); wu32(4,36+len*numCh*2); ws(8,'WAVE');
-  ws(12,'fmt '); wu32(16,16); wu16(20,1); wu16(22,numCh);
-  wu32(24,sr); wu32(28,sr*numCh*2); wu16(32,numCh*2); wu16(34,16);
-  ws(36,'data'); wu32(40,len*numCh*2);
-  let off=44;
-  for(let i=0;i<len;i++){
-    for(let c=0;c<numCh;c++){
-      const s=Math.max(-1,Math.min(1,buf.getChannelData(c)[i]));
-      view.setInt16(off,s<0?s*0x8000:s*0x7FFF,true); off+=2;
+/* ─── Load FFmpeg WASM lazily ─── */
+async function loadFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance;
+
+  document.getElementById('ffmpeg-status').classList.add('visible');
+  setExportStatus('Loading FFmpeg WASM…', 'First time ~30 MB download');
+
+  // Use @ffmpeg/ffmpeg v0.12 ESM from CDN
+  const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
+  const { fetchFile, toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
+
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  const ffmpeg = new FFmpeg();
+  ffmpeg.on('progress', ({ progress }) => {
+    setExportBar(80 + progress * 18); // 80–98% during transcode
+  });
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  ffmpegInstance = { ffmpeg, fetchFile };
+  document.getElementById('ffmpeg-status').classList.remove('visible');
+  return ffmpegInstance;
+}
+
+/* ─── Main export dispatcher ─── */
+async function startExport() {
+  const format = document.getElementById('export-format').value;
+  const fps = parseInt(document.getElementById('export-fps').value) || 30;
+  const prog = document.getElementById('export-progress');
+  const btn = document.getElementById('export-go-btn');
+  const cancelBtn = document.getElementById('export-cancel-btn');
+
+  prog.style.display = '';
+  btn.disabled = true;
+  exportAborted = false;
+  cancelBtn.textContent = 'Abort';
+  cancelBtn.onclick = () => { exportAborted = true; cancelBtn.textContent = 'Close'; cancelBtn.onclick = closeExportModal; btn.disabled = false; setExportStatus('Aborted.'); };
+
+  if (!clips.length) { setExportStatus('No clips to export.'); btn.disabled = false; return; }
+
+  try {
+    if (format === 'wav') {
+      await exportWAV();
+    } else if (format === 'mp3') {
+      await exportMP3();
+    } else if (format === 'webm') {
+      await exportWebM(fps);
+    } else if (format === 'mp4') {
+      await exportMP4(fps);
     }
+    cancelBtn.textContent = 'Close';
+    cancelBtn.onclick = closeExportModal;
+    btn.disabled = false;
+    setTimeout(closeExportModal, 1500);
+  } catch (err) {
+    setExportStatus('Export failed: ' + err.message);
+    cancelBtn.textContent = 'Close';
+    cancelBtn.onclick = closeExportModal;
+    btn.disabled = false;
+    console.error(err);
   }
-  return out;
 }
 
+/* ─── WAV (no FFmpeg) ─── */
+async function exportWAV() {
+  setExportStatus('Decoding audio tracks…'); setExportBar(5);
+  const audioBuf = await mixAudio(p => setExportBar(5 + p * 80));
+  setExportStatus('Encoding WAV…'); setExportBar(90);
+  const blob = audioBufferToWavBlob(audioBuf);
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.wav');
+}
+
+/* ─── MP3 via FFmpeg WASM ─── */
+async function exportMP3() {
+  setExportStatus('Decoding audio tracks…'); setExportBar(5);
+  const audioBuf = await mixAudio(p => setExportBar(5 + p * 40));
+
+  setExportStatus('Encoding WAV…'); setExportBar(50);
+  const wavBlob = audioBufferToWavBlob(audioBuf);
+
+  const { ffmpeg, fetchFile } = await loadFFmpeg();
+  setExportStatus('Transcoding to MP3…', 'Using FFmpeg WASM'); setExportBar(60);
+
+  const qualMap = { high: '320k', medium: '192k', low: '128k' };
+  const abr = qualMap[document.getElementById('export-quality').value] || '192k';
+
+  await ffmpeg.writeFile('input.wav', await fetchFile(wavBlob));
+  await ffmpeg.exec(['-i', 'input.wav', '-c:a', 'libmp3lame', '-b:a', abr, '-y', 'output.mp3']);
+  const data = await ffmpeg.readFile('output.mp3');
+  const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.mp3');
+}
+
+/* ─── WebM (no FFmpeg, fast) ─── */
+async function exportWebM(fps) {
+  setExportStatus('Recording frames…'); setExportBar(5);
+  const blob = await recordWebM(fps, (p, sub) => { setExportBar(5 + p * 90); setExportStatus('Recording frames…', sub); });
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.webm');
+}
+
+/* ─── MP4 via FFmpeg WASM: record WebM first, then transcode ─── */
+async function exportMP4(fps) {
+  // Step 1: Record to WebM (0–60%)
+  setExportStatus('Recording frames to WebM…'); setExportBar(3);
+  const webmBlob = await recordWebM(fps, (p, sub) => {
+    setExportBar(3 + p * 55);
+    setExportStatus('Recording frames…', sub);
+  });
+  if (exportAborted) return;
+
+  // Step 2: Load FFmpeg (shown in its own status)
+  setExportBar(60);
+  const { ffmpeg, fetchFile } = await loadFFmpeg();
+  if (exportAborted) return;
+
+  // Step 3: Transcode WebM → MP4 (H.264)
+  setExportStatus('Transcoding WebM → MP4 (H.264)…', 'Using FFmpeg WASM'); setExportBar(65);
+
+  const qualMap = { high: '18', medium: '23', low: '28' }; // CRF: lower = better
+  const crf = qualMap[document.getElementById('export-quality').value] || '23';
+
+  await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
+  await ffmpeg.exec([
+    '-i', 'input.webm',
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', crf,
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-movflags', '+faststart',
+    '-y', 'output.mp4'
+  ]);
+
+  const data = await ffmpeg.readFile('output.mp4');
+  const blob = new Blob([data.buffer], { type: 'video/mp4' });
+  setExportBar(100); setExportStatus('Done! Downloading…');
+  downloadBlob(blob, 'wolf-export.mp4');
+}
+
+/* ─── Download helper ─── */
 function downloadBlob(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1314,11 +1332,11 @@ function downloadBlob(blob, name) {
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-  if ((e.ctrlKey||e.metaKey) && e.key === 'z') { e.preventDefault(); doUndo(); }
-  if ((e.ctrlKey||e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); doRedo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); doUndo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); doRedo(); }
   if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedClipId) deleteSelectedClip(); }
-  if (e.key === 'ArrowLeft') seekTo(currentTime - 1/30);
-  if (e.key === 'ArrowRight') seekTo(currentTime + 1/30);
+  if (e.key === 'ArrowLeft') seekTo(currentTime - 1 / 30);
+  if (e.key === 'ArrowRight') seekTo(currentTime + 1 / 30);
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -1331,3 +1349,6 @@ document.getElementById('tl-zoom-label').textContent = tlPxPerSec + 'px/s';
 </script>
 </body>
 </html>
+
+
+ <!-- TODO: fix export problems -->
